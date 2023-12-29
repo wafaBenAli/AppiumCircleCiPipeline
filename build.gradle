@@ -1,0 +1,39 @@
+plugins {
+    id 'java'
+    id "io.qameta.allure" version "2.11.2"
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation "io.appium:java-client:9.0.0"
+    implementation "org.slf4j:slf4j-api:2.0.9"
+    implementation "org.slf4j:slf4j-simple:2.0.9"
+    implementation 'io.qameta.allure:allure-testng:2.25.0'
+    implementation "org.testng:testng:7.8.0"
+
+}
+
+test {
+    useTestNG() {
+        suites "src/test/resources/testng.xml"
+        // To generate reports by TestNG library
+        useDefaultListeners = true
+    }
+    testLogging {
+        events "passed", "skipped", "failed", "standardOut", "standardError"
+        showCauses true
+        showExceptions true
+        showStackTraces true
+        showStandardStreams true
+    }
+}
+
+
+sourceCompatibility = JavaVersion.VERSION_14
+targetCompatibility = JavaVersion.VERSION_14

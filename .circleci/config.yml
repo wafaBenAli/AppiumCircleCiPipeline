@@ -1,0 +1,119 @@
+version: 2.1
+
+# -------------------------
+#        ORBS
+# -------------------------
+
+orbs:
+  win: circleci/windows@2.4.0
+  android: circleci/android@2.3.0
+
+  # -------------------------
+  #        Cache Key Anchors
+  # -------------------------
+  # Anchors for the cache keys
+
+  cache_keys:
+    checkout_cache_key: &checkout_cache_key v1-checkout
+    gradle_cache_key: &gradle_cache_key v3-gradle-{{ .Environment.CIRCLE_JOB }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "packages/react-native/ReactAndroid/gradle.properties" }}
+    yarn_cache_key: &yarn_cache_key v6-yarn-cache-{{ .Environment.CIRCLE_JOB }}
+
+# -------------------------
+#        COMMANDS
+# -------------------------
+commands:
+  # Checkout with cache, on machines that are using Docker the cache is ignored
+  checkout_code_with_cache:
+    parameters:
+      checkout_base_cache_key:
+        default: *checkout_cache_key
+        type: string
+    steps:
+      - restore_cache:
+          key: << parameters.checkout_base_cache_key >>-{{ arch }}-{{ .Branch }}-{{ .Revision }}
+      - checkout
+      - save_cache:
+          key: << parameters.checkout_base_cache_key >>-{{ arch }}-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - ".git"
+
+  with_gradle_cache:
+    parameters:
+      steps:
+        type: steps
+    steps:
+      - restore_cache:
+          keys:
+            - *gradle_cache_key
+            - v3-gradle-{{ .Environment.CIRCLE_JOB }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-
+            - v3-gradle-{{ .Environment.CIRCLE_JOB }}-
+            - v3-gradle-
+      - steps: << parameters.steps >>
+      - save_cache:
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
+            - packages/react-native/ReactAndroid/build/downloads
+            - packages/react-native/ReactAndroid/build/third-party-ndk
+          key: *gradle_cache_key
+
+jobs:
+  # -------------------------
+  #     JOBS: Android E2E Tests
+  # -------------------------
+  e2e_android:
+    executor:
+      name: android/android-machine
+      tag: 2023.07.1
+    steps:
+      - checkout_code_with_cache
+      - android/create-avd:
+          avd-name: e2e_emulator
+          system-image: system-images;android-34;google_apis;x86_64
+          install: true
+      - android/start-emulator:
+          avd-name: e2e_emulator
+          no-window: true
+          restore-gradle-cache-prefix: v1a
+          post-emulator-launch-assemble-command: ""
+      - run:
+          name: Install appium
+          command: npm install appium@2.2.2 -g
+      - run:
+          name: Install appium drivers
+          command: |
+            appium driver install uiautomator2@2.29.1
+          #   appium driver install xcuitest@4.32.10
+      - run:
+          name: Start Appium server
+          command: appium
+          background: true
+
+      - run:
+          name: Wait for Appium server
+          command: |
+            chmod +x ./scripts/wait-appium.sh
+            ./scripts/wait-appium.sh
+
+      - run:
+          name: Run E2E tests
+          no_output_timeout: 30m
+          command: |
+            chmod +x ./gradlew
+            ./gradlew test
+
+      - run:
+          name: generate allure report
+          command: |
+            npm install allure-commandline -g
+            allure generate -c /home/circleci/project/build/allure-results -o /home/circleci/project/build/allure-report
+          when: always
+
+      - store_artifacts:
+          path: /home/circleci/project/build/allure-report
+          destination: test-reports
+
+workflows:
+  build:
+    jobs:
+      - e2e_android
